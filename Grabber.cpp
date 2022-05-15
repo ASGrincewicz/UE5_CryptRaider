@@ -3,16 +3,9 @@
 
 #include "Grabber.h"
 
-
-
-// Sets default values for this component's properties
 UGrabber::UGrabber()
 {
-	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
-	// off to improve performance if you don't need them.
 	PrimaryComponentTick.bCanEverTick = true;
-
-	// ...
 }
 
 
@@ -20,40 +13,71 @@ UGrabber::UGrabber()
 void UGrabber::BeginPlay()
 {
 	Super::BeginPlay();
-	
-
-	if(GetPhysicsHandle() != nullptr)
-	{
-		FString HandleName = GetPhysicsHandle()->GetName();
-		UE_LOG(LogTemp, Display, TEXT("%s"),*HandleName);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("No Physics Handle Found!"));
-	}
-	
 }
 
-
-// Called every frame
 void UGrabber::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	FVector TargetLocation = GetComponentLocation() + GetForwardVector() * HoldDistance;
+	UPhysicsHandleComponent* PhysicsHandle = GetPhysicsHandle();
 
-	GetPhysicsHandle()->SetTargetLocationAndRotation(TargetLocation, GetComponentRotation());
-}
+	if(PhysicsHandle && PhysicsHandle->GetGrabbedComponent())
+	{
+		FVector TargetLocation = GetComponentLocation() + GetForwardVector() * HoldDistance;
 
-void UGrabber::Release()
-{
-	UE_LOG(LogTemp, Display, TEXT("Released"));
+		GetPhysicsHandle()->SetTargetLocationAndRotation(TargetLocation, GetComponentRotation());
+	}
 }
 
 void UGrabber::Grab()
 {
 	UE_LOG(LogTemp, Display, TEXT("Grabbing"));
 	
+	FHitResult HitResult;
+	bool HasHit = GetGrabbableInReach(HitResult);
+
+	if(HasHit)
+	{
+		UPrimitiveComponent* HitComponent = HitResult.GetComponent();
+		HitComponent->WakeAllRigidBodies();
+		HitResult.GetActor()->Tags.Add("Grabbed");
+		GetPhysicsHandle()->GrabComponentAtLocationWithRotation(HitComponent, NAME_None, HitResult.ImpactPoint, GetComponentRotation());
+		AActor* ActorHit = HitResult.GetActor();
+
+		FString HitName = ActorHit->GetActorNameOrLabel();
+		UE_LOG(LogTemp, Display, TEXT("Sweep hit: %s "),*HitName);
+		//DrawDebugSphere(GetWorld(),HitResult.ImpactPoint, 10,10, FColor::Blue, false, 5);
+		//DrawDebugSphere(GetWorld(),HitResult.Location, 10,10, FColor::Green, false, 5);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Display, TEXT("Sweep hit: Nothing"));
+	}
+}
+void UGrabber::Release()
+{
+	UPhysicsHandleComponent* PhysicsHandle = GetPhysicsHandle();
+	
+	if(PhysicsHandle && PhysicsHandle->GetGrabbedComponent() != nullptr)
+	{
+		AActor* GrabbedActor = PhysicsHandle->GetGrabbedComponent()->GetOwner();
+		GrabbedActor->Tags.Remove("Grabbed");
+		PhysicsHandle->ReleaseComponent();
+	}
+}
+
+UPhysicsHandleComponent* UGrabber::GetPhysicsHandle() const
+{
+	UPhysicsHandleComponent* Result = GetOwner()->FindComponentByClass<UPhysicsHandleComponent>();
+	if(Result == nullptr)
+	{
+		UE_LOG(LogTemp,Error,TEXT("Grabber requires a UPhysicsHandleComponent!"));
+	}
+	return Result;
+}
+
+bool UGrabber::GetGrabbableInReach(FHitResult& OutHitResult) const
+{
 	FVector Start = GetComponentLocation();
 	
 	FVector End = Start + GetForwardVector() * MaxGrabDistance;
@@ -61,39 +85,5 @@ void UGrabber::Grab()
 	DrawDebugLine(GetWorld(), Start, End, FColor::Red, false);
 
 	FCollisionShape Sphere = FCollisionShape::MakeSphere(GrabRadius);
-	
-	FHitResult HitResult;
-
-	bool HasHIt;
-	HasHIt = GetWorld()->SweepSingleByChannel(HitResult, Start, End, FQuat::Identity, ECC_GameTraceChannel2, Sphere);
-
-	if(HasHIt)
-	{
-		GetPhysicsHandle()->GrabComponentAtLocationWithRotation(HitResult.GetComponent(), NAME_None, HitResult.ImpactPoint, GetComponentRotation());
-		AActor* ActorHit = HitResult.GetActor();
-
-		FString HitName = ActorHit->GetActorNameOrLabel();
-		UE_LOG(LogTemp, Display, TEXT("Sweep hit: %s "),*HitName);
-		DrawDebugSphere(GetWorld(),HitResult.ImpactPoint, 10,10, FColor::Blue, false, 5);
-		DrawDebugSphere(GetWorld(),HitResult.Location, 10,10, FColor::Green, false, 5);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Display, TEXT("Sweep hit: Nothing"));
-	}
+	return GetWorld()->SweepSingleByChannel(OutHitResult, Start, End, FQuat::Identity, ECC_GameTraceChannel2, Sphere);
 }
-
-UPhysicsHandleComponent* UGrabber::GetPhysicsHandle() const
-{
-	UPhysicsHandleComponent* PhysicsHandle = GetOwner()->FindComponentByClass<UPhysicsHandleComponent>();
-	if(PhysicsHandle == nullptr)
-	{
-		UE_LOG(LogTemp,Warning,TEXT("No Physics Handle!"));
-	}
-	return PhysicsHandle;
-}
-
-
-
-
-
